@@ -1,85 +1,49 @@
-FROM ringcentral/jdk:11 AS builder
+FROM maven:3.9.9-eclipse-temurin-21 AS backend-builder
+
+COPY . /build
+WORKDIR /build
+RUN mvn clean package -Dmaven.test.skip=true
+WORKDIR /build/target
+RUN mv wvp-pro-*.jar wvp.jar
+
+
+FROM node:16-bullseye-slim AS frontend-builder
+
+COPY . /build
+WORKDIR /build/web
+RUN npm config set registry https://registry.npmmirror.com \
+  && npm install \
+  && npm run build:prod
+
+
+FROM nginx:stable
+
+ARG TZ=Asia/Shanghai
+ENV TZ=${TZ}
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openjdk-21-jre-headless ca-certificates tzdata \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -f /etc/nginx/conf.d/default.conf
+
+RUN mkdir -p /opt/wvp /opt/dist /opt/ylcx/wvp
+WORKDIR /opt/wvp
+
+# backend
+COPY --from=backend-builder /build/target/wvp.jar /opt/wvp/wvp.jar
+COPY ./docker/wvp/wvp/ /opt/ylcx/wvp/
+
+# frontend (vue.config.js outputDir -> src/main/resources/static)
+COPY --from=frontend-builder /build/src/main/resources/static/ /opt/dist/
+
+# nginx template (rendered by nginx official entrypoint)
+COPY ./docker/nginx/templates/nginx.conf.template /etc/nginx/templates/nginx.conf.template
+
+# start java app before nginx
+COPY ./docker/wvp/docker-entrypoint.d/10-wvp.sh /docker-entrypoint.d/10-wvp.sh
+RUN chmod +x /docker-entrypoint.d/10-wvp.sh
 
 EXPOSE 18978/tcp
 EXPOSE 8116/tcp
 EXPOSE 8116/udp
 EXPOSE 8080/tcp
-
-#RUN apt-get update && \
-         #DEBIAN_FRONTEND="noninteractive" \
-         #apt-get install -y --no-install-recommends \
-         #wget \
-         #cmake \
-         #maven \
-         #git \
-         #ca-certificates \
-         #tzdata \
-         #curl \
-         #libpcre3 \
-         #libpcre3-dev \
-         #zlib1g-dev \
-         #openssl \
-         #libssl-dev \
-         #gdb && \
-         #apt-get autoremove -y && \
-         #apt-get clean -y && \
-         #rm -rf /var/lib/apt/lists/*
-
-## install jdk1.8
-#RUN mkdir -p /opt/download
-#WORKDIR /opt/download
-#RUN if [ "$Platfrom" = "arm64" ]; \
-    #then \
-        #wget https://polaris-tian-generic.pkg.coding.net/qt/autopliot/jdk-8u411-linux-aarch64.tar.gz?version=latest --no-check-certificate -O jdk-8.tar.gz && \
-        #tar -zxvf /opt/download/jdk-8.tar.gz -C /usr/local/ --transform 's/jdk1.8.0_411/java/' && \
-        #rm /opt/download/jdk-8.tar.gz; \
-    #else \
-        #wget https://polaris-tian-generic.pkg.coding.net/qt/autopliot/jdk-8u202-linux-x64.tar.gz?version=latest --no-check-certificate -O jdk-8.tar.gz && \
-        #tar -zxvf /opt/download/jdk-8.tar.gz -C /usr/local/ --transform 's/jdk1.8.0_202/java/' && \
-        #rm /opt/download/jdk-8.tar.gz; \
-    #fi
-
-#ENV JAVA_HOME /usr/local/java/
-#ENV JRE_HOME ${JAVA_HOME}/jre
-#ENV CLASSPATH .:${JAVA_HOME}/lib:${JRE_HOME}/lib 
-#ENV PATH ${JAVA_HOME}/bin:$PATH 
-
-RUN java -version && javac -version
-
-#RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
-RUN apt-get update && \
-    apt-get install -y maven && \
-    rm -rf /var/lib/apt/lists/*
-    
-
-COPY . /build
-WORKDIR /build
-RUN ls && mvn clean package -Dmaven.test.skip=true
-WORKDIR /build/target
-#确保文件名一致
-RUN mv wvp-pro-*.jar wvp.jar
-
-
-FROM ringcentral/jdk:11
-RUN mkdir -p /opt/wvp
-WORKDIR /opt/wvp
-COPY --from=builder /build/target /opt/wvp
-COPY ./docker/wvp/wvp /opt/wvp
-ENTRYPOINT ["java", "-Xms512m", "-Xmx1024m", "-XX:+HeapDumpOnOutOfMemoryError", "-XX:HeapDumpPath=/opt/ylcx/", "-jar", "wvp.jar", "--spring.config.location=/opt/ylcx/wvp/application.yml"]
-
-
-
-#RUN mkdir -p /opt/wvp
-#WORKDIR /opt/wvp
-#COPY ./wvp /opt/wvp
-#
-#WORKDIR /home
-#RUN cd /home && \
-    #git clone https://gitee.com/pan648540858/wvp-GB28181-pro.git
-#
-#RUN cd /home/wvp-GB28181-pro && \
-    #mvn clean package -Dmaven.test.skip=true && \
-    #cp /home/wvp-GB28181-pro/target/*.jar /opt/wvp/wvp.jar
-#
-#WORKDIR /opt/wvp
-#ENTRYPOINT ["java", "-Xms512m", "-Xmx1024m", "-XX:+HeapDumpOnOutOfMemoryError", "-XX:HeapDumpPath=/opt/ylcx/", "-jar", "wvp.jar", "--spring.config.location=/opt/ylcx/wvp/application.yml"]

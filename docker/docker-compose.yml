@@ -88,6 +88,7 @@ services:
     networks:
       - media-net
     ports:
+      - "${WebHttp:-8080}:8080"
       - "18978:18978"
       - "${SIP_Port:-8116}:${SIP_Port:-8116}/udp"
       - "${SIP_Port:-8116}:${SIP_Port:-8116}/tcp"
@@ -99,6 +100,8 @@ services:
       - ./wvp/config:/opt/wvp/config
       - ./wvp/wvp/:/opt/ylcx/wvp/
       - ./logs/wvp:/opt/wvp/logs/
+      - ./nginx/templates/:/etc/nginx/templates
+      - ./logs/nginx:/var/log/nginx
     environment:
       TZ: "Asia/Shanghai"
       # 流链接的IP
@@ -133,24 +136,6 @@ services:
       RecordSip: ${RecordSip}
       RecordPushLive: ${RecordPushLive}
 
-  polaris-nginx:
-    # 显式指定构建上下文和Dockerfile路径
-    build:
-      context: ..  # 构建上下文的根路径
-      dockerfile: ./docker/nginx/Dockerfile  # 相对于上下文路径的Dockerfile位置
-    ports:
-      - "${WebHttp:-8080}:8080"
-    depends_on:
-      - polaris-wvp
-    volumes:
-      - ./nginx/templates/:/etc/nginx/templates
-      - ./logs/nginx:/var/log/nginx
-    environment:
-      # 流链接的IP
-      Stream_IP: ${Stream_IP}
-    networks:
-      - media-net
-      
 networks:
   media-net:
     driver: bridge
